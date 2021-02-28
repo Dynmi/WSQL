@@ -1,0 +1,7 @@
+# libary folder
+/lib/
+
+/databases.list
+
+/*.select
+/*.where
