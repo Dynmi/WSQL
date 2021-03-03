@@ -73,6 +73,7 @@ public:
 
     RC CreateTable(string &tableName, vector<attrInfo> *attrList = NULL);
     RC DropTable(string &tableName);
+    RC ClearTable(string &tableName);
     RC RenameTable(string &oldName, string &newName);
 
     RC AddColumn(string &tableName, attrInfo &colinfo);
@@ -81,18 +82,22 @@ public:
 
     RC InsertEntry(string &tableName, map<string,string> &entry, RID &_rid);
     RC DeleteEntry(string &tableName, vector<RID> &rids);
+    RC DeleteEntry(string &tableName, string &RidFile);
     RC UpdateEntry(string &tableName, RID rid, map<string,string> &entry);
     RC SelectEntry(string &tableName, string &retFile, string &column, CompOp &op, void *&cmpKey);
     RC SelectEntry(string &tableName, string &retFile, string &column, CompOp &op, string &value);
     RC SelectEntry_from_file(string &tableName, string &retFile, string &column, CompOp &op, void *&cmpKey);
 
     RC DetailTable(string &tableName);
-    RC SelectTable(string &tableName, string &retFile);
     RC WriteValue(string &tableName, vector<string> &colList, string &outFile, string &RidFile);
+    RC WriteValue(string &tableName, vector<string> &colList, string &outFile);
 
     void GetScmFile(string &retFile, string &tableName) const;
     void GetRMFile(string &retFile, string &tableName, string &columnName) const;
     void GetIXFile(string &retFile, string &tableName, string &columnName) const;
+
+    bool isValidTable(string &tableName);
+    bool isValidColumn(string &tableName, string &columnName);
 };
 
 /* class SM_DatabaseHandle {

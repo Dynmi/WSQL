@@ -189,7 +189,7 @@ public:
     RC GetPageHeader(PF_PageHandle &ph, RM_PageHdr &pHdr) const;
     RC SetPageHeader(PF_PageHandle &ph, RM_PageHdr &pHdr);
     // Given a RID, return the record
-    RC GetRec     (const RID &rid, RM_Record &rec) const;
+    RC GetRec     (RID rid, RM_Record &rec) const;
 
     RC InsertRec  (const void *pData, RID &rid);       // Insert a new record
     RC DeleteRec  (const RID &rid);                    // Delete a record
@@ -205,7 +205,7 @@ public:
     PageNum GetNumPages() const;
     SlotNum GetNumSlots() const;
     long long GetNumRecs() const;
-    RC WriteRidList(FILE *&fp) const;
+    RC WriteAllRids(const char *OutFile) const;
     RC WriteValue(FILE *&fp, RID rid) const;
     RC IsValid() const;
     void print(PageNum p, AttrType type);

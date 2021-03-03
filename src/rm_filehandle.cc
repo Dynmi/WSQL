@@ -202,15 +202,16 @@ long long RM_FileHandle::GetNumRecs() const
 
 
 //
-// write RID of all records to given file
+// write RID of all records to 'OutFile'
 //
-RC RM_FileHandle::WriteRidList(FILE *&fp) const
+RC RM_FileHandle::WriteAllRids(const char *OutFile) const
 {
     RC rc = 0;
     auto numSlots = this->GetNumSlots();
     PF_PageHandle ph;
     RM_PageHdr pHdr(numSlots);
     PageNum p = (PageNum)-1;
+    FILE *fpx = fopen(OutFile, "w");
     while (1)
     {
         rc = pfh->GetNextPage(p, ph);
@@ -227,12 +228,13 @@ RC RM_FileHandle::WriteRidList(FILE *&fp) const
             for (int s = 0; s < b.getSize(); s++)
             {
                 if (b.test(s))
-                    fprintf(fp, "%d %d\n", p, s);
+                    fprintf(fpx, "%d %d\n", p, s);
             }
         }
         rc = pfh->UnpinPage(p);
         if (rc != 0) return rc;
     }
+    fclose(fpx);
 
     return rc;
 }
@@ -252,10 +254,10 @@ RC RM_FileHandle::WriteValue(FILE *&fp, RID rid) const
             fprintf(fp, "%s ", ptr);
         }break;
         case FLOAT:{
-            fprintf(fp, "%f ", (float *)ptr);
+            fprintf(fp, "%f ", *(float *)ptr);
         }break;
         case INT:{
-            fprintf(fp, "%d ", (int *)ptr);           
+            fprintf(fp, "%d ", *(int *)ptr);           
         }break;
     }
     return rc;
@@ -440,7 +442,7 @@ RC RM_FileHandle::SetPageHeader(PF_PageHandle &ph, RM_PageHdr &pHdr)
 // Out:  rec
 // Ret:  RM return code
 //
-RC RM_FileHandle::GetRec(const RID &rid, RM_Record &rec) const
+RC RM_FileHandle::GetRec(RID rid, RM_Record &rec) const
 {
     if(IsValid())
         return IsValid();

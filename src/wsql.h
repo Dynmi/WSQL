@@ -24,6 +24,9 @@ void yyerror(const char *);
 #define RM_SUFFIX     ".data"
 #define IX_SUFFIX     ".index"
 
+#define SUCCESS_STRING "------------SUCCESS-------------"
+#define FAILED_STRING  "------------FAILED -------------"
+
 #define D_LIST_PATH "databases.list"
 
 //

@@ -13,7 +13,7 @@
 #define SLOTS_PER_PAGE 256
 #define MAX_COL_NAME_LENGTH 64
 
-void get_file_list(const char *PATH, vector<string> &list)
+void list_files(const char *PATH, vector<string> &list)
 {
     struct dirent *ptr;
     DIR *dir;
@@ -146,20 +146,19 @@ RC SM_TableHandle::CreateTable(string &tableName, vector<attrInfo> *attrList)
         fclose(fp);
     }else {
         write_scm(filename.c_str(), *attrList);
-    }
+        for (auto iter = attrList->begin(); iter != attrList->end(); iter++)
+        {
+            GetRMFile(filename, tableName, iter->name);
+            cout << filename << endl;
+            rc = CreateRMFile(filename.c_str(), iter->length, SLOTS_PER_PAGE * iter->length, iter->type);
+            if (rc != 0) return rc;
 
-    for (auto iter = attrList->begin(); iter != attrList->end(); iter++)
-    {
-        GetRMFile(filename, tableName, iter->name);
-        cout << filename << endl;
-        rc = CreateRMFile(filename.c_str(), iter->length, SLOTS_PER_PAGE * iter->length, iter->type);
-        if (rc != 0) return rc;
+            GetIXFile(filename, tableName, iter->name);
+            cout << filename << endl;
 
-        GetIXFile(filename, tableName, iter->name);
-        cout << filename << endl;
-
-        rc = CreateIXFile(filename.c_str(), iter->type, iter->length);
-        if (rc != 0) return rc;
+            rc = CreateIXFile(filename.c_str(), iter->type, iter->length);
+            if (rc != 0) return rc;
+        }
     }
 
     return rc;
@@ -170,18 +169,15 @@ RC SM_TableHandle::CreateTable(string &tableName, vector<attrInfo> *attrList)
 // drop table as instructed.
 // <tableName>.scm file & <tableName>.<colName>.data 
 // & <tableName>.<colName>.index files will be destroyed.
-// return 1 if table does not exist
 // return 0 if success
 //
 RC SM_TableHandle::DropTable(string &tableName)
 {
     RC rc = 0;
-    vector<attrInfo> attrList;
-
     string filename;
+
+    vector<attrInfo> attrList;
     GetScmFile(filename, tableName);
-    int fexist = access(filename.c_str(), 0);
-    if (fexist != 0) return 1;
     read_scm(filename.c_str(), attrList);
     rc = remove(filename.c_str());
     if (rc != 0) return 1;
@@ -201,6 +197,33 @@ RC SM_TableHandle::DropTable(string &tableName)
 }
 
 
+//
+// Delete all records in this table
+//
+RC SM_TableHandle::ClearTable(string &tableName)
+{
+    RC rc = 0;
+    string filename;
+    vector<attrInfo> attrList;
+    GetScmFile(filename, tableName);
+    read_scm(filename.c_str(), attrList);
+
+    for (auto iter = attrList.begin(); iter != attrList.end(); iter++)
+    {
+        GetRMFile(filename, tableName, iter->name);
+        DestroyRMFile(filename.c_str());
+        rc = CreateRMFile(filename.c_str(), iter->length, SLOTS_PER_PAGE * iter->length, iter->type);
+        if (rc != 0) return rc;
+
+        GetIXFile(filename, tableName, iter->name);
+        DestroyIXFile(filename.c_str());
+        rc = CreateIXFile(filename.c_str(), iter->type, iter->length);
+        if (rc != 0) return rc;
+    }
+
+    return rc;
+}
+
 RC SM_TableHandle::RenameTable(string &oldName, string &newName)
 {
     RC rc = 0;
@@ -208,7 +231,7 @@ RC SM_TableHandle::RenameTable(string &oldName, string &newName)
     string cmpStr = oldName + ".";
     int len_cmpStr = cmpStr.size();
     vector<string> files;
-    get_file_list(dbPath.c_str(), files);
+    list_files(dbPath.c_str(), files);
     for (int i = 0; i < files.size(); i++)
     {
         if (files[i].size() <= len_cmpStr 
@@ -393,18 +416,24 @@ RC SM_TableHandle::InsertEntry(string &tableName, map<string,string> &entry, RID
             {
             case INT:{
                 int val = atoi(entry[iter->name].c_str());
-                rmfh->InsertRec((void *)&val, _rid);
-                ixfh->InsertEntry((void *)&val, _rid);
+                rc = rmfh->InsertRec((void *)&val, _rid);
+                assert(rc == 0);
+                rc = ixfh->InsertEntry((void *)&val, _rid);
+                assert(rc == 0);
             }break;
             case FLOAT:{
                 float val = atof(entry[iter->name].c_str());
-                rmfh->InsertRec((void *)&val, _rid);
-                ixfh->InsertEntry((void *)&val, _rid);
+                rc = rmfh->InsertRec((void *)&val, _rid);
+                assert(rc == 0);
+                rc = ixfh->InsertEntry((void *)&val, _rid);
+                assert(rc == 0);
             }break;
             case STRING:{
                 auto ptr = const_cast<char *>(entry[iter->name].c_str());
-                rmfh->InsertRec((void *)ptr, _rid);
-                ixfh->InsertEntry((void *)ptr, _rid);
+                rc = rmfh->InsertRec((void *)ptr, _rid);
+                assert(rc == 0);
+                rc = ixfh->InsertEntry((void *)ptr, _rid);
+                assert(rc == 0);
             }break;      
             default:
                 break;
@@ -467,6 +496,59 @@ RC SM_TableHandle::DeleteEntry(string &tableName, vector<RID> &rids)
         rc = rmfh->CloseRMFile();
         if (rc != 0) return rc;
     }
+    delete rmfh;
+    delete ixfh;
+
+    return rc;
+}
+
+
+//
+// Delete all records according to 'RidFile'
+//
+RC SM_TableHandle::DeleteEntry(string &tableName, string &RidFile)
+{
+    RC rc = 0;
+    string filename;
+    char *_key;
+    RID _rid;
+    RM_Record rec;
+    vector<attrInfo> attrList;
+    GetScmFile(filename, tableName);
+    read_scm(filename.c_str(), attrList);
+
+    RM_FileHandle *rmfh = new RM_FileHandle;
+    IX_IndexHandle *ixfh = new IX_IndexHandle;
+    FILE *fp = fopen(RidFile.c_str(), "r");
+    for (auto iter = attrList.begin(); iter != attrList.end(); iter++)
+    {            
+        GetRMFile(filename, tableName, iter->name);
+        rc = rmfh->OpenRMFile(filename.c_str());
+        if (rc != 0) return rc;
+
+        GetIXFile(filename, tableName, iter->name);
+        rc = ixfh->OpenIndex(filename.c_str());
+        if (rc != 0) return rc;
+
+        rewind(fp);
+        RID rid;
+        while (fscanf(fp, "%d %d", &(rid.page), &(rid.slot)) != EOF)
+        {
+            if ((rc = rmfh->GetRec(rid, rec))
+                || (rc = rec.GetData(_key)))
+                return rc;
+            if (!rec.IsNullValue()
+                && (rc = ixfh->DeleteEntry(_key, rid)))
+                return rc;
+            rc = rmfh->DeleteRec(rid);
+            if (rc != 0) return rc;
+        }
+        rc = ixfh->CloseIndex();
+        if (rc != 0) return rc;
+        rc = rmfh->CloseRMFile();
+        if (rc != 0) return rc;
+    }
+    fclose(fp);
     delete rmfh;
     delete ixfh;
 
@@ -749,6 +831,7 @@ RC SM_TableHandle::SelectEntry_from_file(string &tableName, string &retFile, str
 //
 // show the column information of given table
 // return 0 if success
+// return 1 if no such table
 //
 RC SM_TableHandle::DetailTable(string &tableName)
 {
@@ -757,6 +840,8 @@ RC SM_TableHandle::DetailTable(string &tableName)
 
     GetScmFile(filename, tableName);
     vector<attrInfo> attrList;
+    int fexist = access(filename.c_str(), 0);
+    if (fexist != 0) return 1;
     read_scm(filename.c_str(), attrList);
 
     printf("\n");
@@ -774,53 +859,37 @@ RC SM_TableHandle::DetailTable(string &tableName)
 
 
 //
-// write RID of all records in given table to 'retFile'
-// return 0 if success
-// return 1 if empty table
-//
-RC SM_TableHandle::SelectTable(string &tableName, string &retFile)
-{
-    RC rc = 0;
-    string filename;
-    vector<attrInfo> attrList;
-    GetScmFile(filename, tableName);
-    read_scm(filename.c_str(), attrList);
-    if (attrList.size() == 0)
-        return 1;
-
-    RM_FileHandle *rmfh = new RM_FileHandle;
-    GetRMFile(filename, tableName, attrList[0].name);
-    vector<attrInfo>().swap(attrList);
-    rmfh->OpenRMFile(filename.c_str());
-    FILE *fp = fopen(retFile.c_str(), "w");
-    rmfh->WriteRidList(fp);
-    fclose(fp);
-    rmfh->CloseRMFile();
-    delete rmfh;
-    return rc;
-}
-
-
-//
-// Write value at given RID to 'outFile'
+// Write value at given RIDs in 'RidFile' to 'outFile'
 //
 RC SM_TableHandle::WriteValue(string &tableName, vector<string> &colList, string &outFile, string &RidFile)
 {
     RC rc = 0;
+    RM_FileHandle rmfh;
+    string filename;
+    RID rid;
+
+    if (RidFile == "")
+    {
+        GetRMFile(filename, tableName, colList[0]);
+        rmfh.OpenRMFile(filename.c_str());
+        RidFile = tableName + ".where";
+        rc = rmfh.WriteAllRids(RidFile.c_str());
+        rmfh.CloseRMFile();
+    }
 
     FILE *fpw = fopen(outFile.c_str(), "w"),
          *fpr = fopen(RidFile.c_str(), "r");
-    string filename;
-    RM_FileHandle rmfh;
-    RM_Record rec;
-    RID rid;
-    char *pData;
-    for (int c = 0; c < colList.size(); c++)
-        fprintf(fpw, "%s  ", colList[c].c_str());
+
     fprintf(fpw, "\n");
-    fprintf(fpw, "---------------------------------------\n");    
+    fprintf(fpw, "#---------------------------------------------#\n");  
+    fprintf(fpw, "| ");  
+    for (int c = 0; c < colList.size(); c++)
+        fprintf(fpw, "%s    ", colList[c].c_str());
+    fprintf(fpw, "\n");
+    fprintf(fpw, "#---------------------------------------------#\n");    
     while (fscanf(fpr, "%d %d", &(rid.page), &(rid.slot)) != EOF)
     {
+        fprintf(fpw, "| ");
         for (int c = 0; c < colList.size(); c++)
         {
             GetRMFile(filename, tableName, colList[c]);
@@ -833,10 +902,68 @@ RC SM_TableHandle::WriteValue(string &tableName, vector<string> &colList, string
         }
         fprintf(fpw, "\n");
     }
-    fprintf(fpw, "---------------------------------------\n");    
+    fprintf(fpw, "#---------------------------------------------#\n");    
     fclose(fpr);
     fclose(fpw);
 
     return rc;
 }
 
+
+//
+// Write all records to 'outFile'
+//
+RC SM_TableHandle::WriteValue(string &tableName, vector<string> &colList, string &outFile)
+{
+    RC rc = 0;
+    FILE *fp = fopen(outFile.c_str(), "w");
+    RM_FileHandle rmfh;
+    rmfh.OpenRMFile(tableName.c_str());
+    rmfh.CloseRMFile();
+    fclose(fp);
+    return rc;
+}
+
+
+//
+// check whether there is such table
+//
+bool SM_TableHandle::isValidTable(string &tableName)
+{
+    string filename;
+    this->GetScmFile(filename, tableName);
+    if (access(filename.c_str(), 0) == 0)
+        return 1;
+    return 0;
+}
+
+
+//
+// check whether there is such column
+//
+bool SM_TableHandle::isValidColumn(string &tableName, string &columnName)
+{
+    string filename;
+    this->GetScmFile(filename, tableName);
+    FILE *fp = fopen(filename.c_str(), "r");
+    int attrNum;
+    fscanf(fp, "%d", &attrNum);
+    attrInfo tmp;
+    char *cname = new char[256];
+    for (int i = 0; i < attrNum; i++)
+    {
+        fscanf(fp, "%s %d %d", 
+                 cname, 
+                 &(tmp.type), 
+                 &(tmp.length));
+        if (cname == columnName)
+        {
+            delete cname;
+            fclose(fp);
+            return 1;
+        }
+    }
+    delete cname;
+    fclose(fp);
+    return 0;
+}
