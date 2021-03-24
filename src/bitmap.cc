@@ -16,6 +16,9 @@
 #include "rm.h"
 
 
+//
+// allocate memory space for buffer
+//
 bitmap::bitmap(int numBits, char *buf)
 {
     size = numBits;
@@ -34,12 +37,18 @@ bitmap::bitmap(int numBits, char *buf)
 }
 
 
+//
+// recycle memory space for buffer
+//
 bitmap::~bitmap()
 {
     delete [] buffer;
 }
 
 
+//
+// copy the data in 'buffer' to 'buf'
+//
 RC bitmap::to_char_buf(char * buf, int len) const
 {
     assert( buf!=NULL && len==NumChars );
@@ -49,6 +58,9 @@ RC bitmap::to_char_buf(char * buf, int len) const
 }
 
 
+//
+// set the bit at 'pos' to 'sign'
+//
 void bitmap::set(unsigned int pos, bool sign)
 {
     int byte, offset;

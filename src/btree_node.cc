@@ -1,7 +1,7 @@
 //
 // File:        btree_node.cc
 //
-// Description: Implementation for btree node
+// Description: Implementation for B-link tree node
 //
 // Author:     Haris Wang (dynmiw@gmail.com)
 //
